@@ -6,12 +6,13 @@ from tqdm import tqdm
 from Models import Models
 from clients import clients, user
 from copy import deepcopy
+import random
 
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter, description="FedAvg")
 parser.add_argument('-g', '--gpu', type=str, default='0,1,2,3,4,5,6,7', help='gpu id to use(e.g. 0,1,2,3)')
 parser.add_argument('-nc', '--num_of_clients', type=int, default=100, help='numer of the clients')
-parser.add_argument('-cf', '--cfraction', type=float, default=0.1, help='C fraction, 0 means 1 client, 1 means total clients')
+parser.add_argument('-cf', '--cfraction', type=float, default=0.2, help='C fraction, 0 means 1 client, 1 means total clients')
 parser.add_argument('-E', '--epoch', type=int, default=5, help='local train epoch')
 parser.add_argument('-B', '--batchsize', type=int, default=10, help='local train batch size')
 parser.add_argument('-mn', '--modelname', type=str, default='mnist_2nn', help='the model to train')
@@ -22,6 +23,7 @@ parser.add_argument('-sf', '--save_freq', type=int, default=20, help='global mod
 parser.add_argument('-ncomm', '--num_comm', type=int, default=101, help='number of communications')
 parser.add_argument('-sp', '--save_path', type=str, default='./checkpoints', help='the saving path of checkpoints')
 parser.add_argument('-iid', '--IID', type=int, default=0, help='the way to allocate data to clients')
+parser.add_argument('-ns', '--num_servers', type=int, default=3, help='Number of servers')
 
 
 def test_mkdir(path):
@@ -65,7 +67,7 @@ if __name__=='__main__':
     saver = tf.train.Saver(max_to_keep=3)
 
     # ---------------------------------------- server -------------------------------------------- #
-    num_of_servers = 3
+    num_of_servers = args.num_servers
 
     class servers:
         def __init__(self, num_servers, myClients: clients):
@@ -104,18 +106,13 @@ if __name__=='__main__':
             print("communicate round {}".format(i))
             for j in range(myServers.num):
                 print(f'server{j} running:')
-                # get server info
-                # for client randomization
-                '''
-                order = np.arange(args.num_of_clients)
-                np.random.shuffle(order)
-                clients_in_comm = ['client{}'.format(i) for i in order[0:num_in_comm]]
-                '''
-                clients_in_comm = [ c for c in myServers.serverSet[f'server{j}']]
-                #num_in_comm = int(max(args.num_of_clients * args.cfraction, 1))
-                num_in_comm = len(clients_in_comm)
-                sum_vars = None
                 
+                # select random clients
+                client_keys = myServers.serverSet[f'server{j}']
+                num_in_comm = int(max(len(client_keys)* args.cfraction, 1))
+                clients_in_comm = random.sample(client_keys, num_in_comm)
+                
+                sum_vars = None
                 global_vars = myServers.serverVars[f'server{j}']
                 # init global vars for server
                 if global_vars is None:
@@ -137,14 +134,6 @@ if __name__=='__main__':
                 myServers.serverVars[f'server{j}'] = global_vars
 
                 # print server specific validation data
-                '''
-                if i % args.val_freq == 0:
-                    for variable, value in zip(tf.trainable_variables(), global_vars):
-                        variable.load(value, sess)
-                    test_data = myClients.test_data
-                    test_label = myClients.test_label
-                    print(f'server{j}:' ,sess.run(accuracy, feed_dict={inputsx: test_data, inputsy: test_label}))
-                '''
                 if i % args.save_freq == 0:
                     checkpoint_name = os.path.join(args.save_path, '{}_comm'.format(args.modelname) +
                                                    'IID{}_communication{}'.format(args.IID, i+1)+ f'server{j}'+'.ckpt')
@@ -174,4 +163,4 @@ if __name__=='__main__':
                     variable.load(value, sess)
                 test_data = myClients.test_data
                 test_label = myClients.test_label
-                print(f'server{j}:' ,sess.run(accuracy, feed_dict={inputsx: test_data, inputsy: test_label}))
+                print(f'global aggregation:' ,sess.run(accuracy, feed_dict={inputsx: test_data, inputsy: test_label}))
