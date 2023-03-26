@@ -17,7 +17,7 @@ class user(object):
         self.parameters = {}
 
         self.train_dataset = self.dataset
-        self.train_labellabel = self.label
+        self.train_label = self.label
         if self.isToPreprocess == 1:
             self.preprocess()
 
