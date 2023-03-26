@@ -11,19 +11,20 @@ import random
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter, description="FedAvg")
 parser.add_argument('-g', '--gpu', type=str, default='0,1,2,3,4,5,6,7', help='gpu id to use(e.g. 0,1,2,3)')
-parser.add_argument('-nc', '--num_of_clients', type=int, default=100, help='numer of the clients')
+parser.add_argument('-nc', '--num_of_clients', type=int, default=200, help='numer of the clients')
 parser.add_argument('-cf', '--cfraction', type=float, default=0.3, help='C fraction, 0 means 1 client, 1 means total clients')
 parser.add_argument('-E', '--epoch', type=int, default=5, help='local train epoch')
 parser.add_argument('-B', '--batchsize', type=int, default=10, help='local train batch size')
 parser.add_argument('-mn', '--modelname', type=str, default='mnist_2nn', help='the model to train')
 parser.add_argument('-lr', "--learning_rate", type=float, default=0.01, help="learning rate, \
                     use value from origin paper as default")
-parser.add_argument('-vf', "--val_freq", type=int, default=5, help="model validation frequency(of communications)")
+parser.add_argument('-vf', "--val_freq", type=int, default=1, help="model validation frequency(of communications)")
 parser.add_argument('-sf', '--save_freq', type=int, default=20, help='global model save frequency(of communication)')
 parser.add_argument('-ncomm', '--num_comm', type=int, default=101, help='number of communications')
 parser.add_argument('-sp', '--save_path', type=str, default='./checkpoints', help='the saving path of checkpoints')
 parser.add_argument('-iid', '--IID', type=int, default=0, help='the way to allocate data to clients')
 parser.add_argument('-ns', '--num_servers', type=int, default=5, help='Number of servers')
+parser.add_argument('-srf', '--server_fraction', type=float, default=1.0, help='fraction of other servers selected')
 
 
 def test_mkdir(path):
@@ -132,14 +133,15 @@ if __name__=='__main__':
                 for var in sum_vars:
                     global_vars.append(var / num_in_comm)
                 myServers.serverVars[f'server{j}'] = global_vars
-
-                # print server specific validation data
+                
+                # save model
                 if i % args.save_freq == 0:
                     checkpoint_name = os.path.join(args.save_path, '{}_comm'.format(args.modelname) +
                                                    'IID{}_communication{}'.format(args.IID, i+1)+ f'server{j}'+'.ckpt')
                     save_path = saver.save(sess, checkpoint_name)
-                
-            # global aggregation
+            
+            '''
+             # hierarchical
             if i % args.val_freq == 0:
                 print('*** global aggregation ***')
                 serv_sum_vars = None
@@ -164,3 +166,50 @@ if __name__=='__main__':
                 test_data = myClients.test_data
                 test_label = myClients.test_label
                 print(f'global aggregation:' ,sess.run(accuracy, feed_dict={inputsx: test_data, inputsy: test_label}))
+            '''
+            
+            # distributed, to debug
+            
+            global_agg_saves = {}
+            for j in range(myServers.num):
+                # global aggregation
+                if i % args.val_freq == 0:
+                    print(f'*** global aggregation server{j} ***')
+                    # select a server set to get updates
+                    serv_set = set(myServers.serverSet)
+                    serv_set.remove(f'server{j}')
+                    num_servs = int(max(len(serv_set)* args.server_fraction, 1))
+                    selected_servers = random.sample(serv_set, num_servs)
+                    selected_servers = set(selected_servers)
+                    selected_servers.add(f'server{j}')
+                    
+                    
+                    serv_sum_vars = None
+                    print('Selected Servers:', selected_servers)
+                    for serv in selected_servers:
+                        local_vars = myServers.serverVars[serv]
+                        if serv_sum_vars is None:
+                            serv_sum_vars = local_vars
+                        else:
+                           for sum_var, local_var in zip(serv_sum_vars, local_vars):
+                               sum_var += local_var     
+                    agg_global_vars = []
+                    for var in serv_sum_vars:
+                        agg_global_vars.append(var / len(selected_servers))
+                    print(len(selected_servers))
+                    
+                    # give vars back to the server
+                    global_agg_saves[f'server{j}'] = deepcopy(agg_global_vars)
+
+            
+            for serv in global_agg_saves:
+                #myServers.serverVars[serv] = global_agg_saves[serv]
+                pass
+                # eval model
+            for variable, value in zip(tf.trainable_variables(), myServers.serverVars['server0']):
+                variable.load(value, sess)
+            test_data = myClients.test_data
+            test_label = myClients.test_label
+            print(f'global aggregation:', sess.run(accuracy, feed_dict={inputsx: test_data, inputsy: test_label}))
+            
+                
