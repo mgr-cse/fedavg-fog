@@ -5,6 +5,7 @@ import tensorflow as tf
 from tqdm import tqdm
 from Models import Models
 from clients import clients, user
+import random
 
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter, description="FedAvg")
@@ -72,7 +73,8 @@ if __name__=='__main__':
 
         myClients = clients(args.num_of_clients, datasetname,
                             args.batchsize, args.epoch, sess, train, inputsx, inputsy, is_IID=args.IID)
-
+        global_energy = 0.0
+        global_energy_rate = 1000.0
         vars = tf.trainable_variables()
         global_vars = sess.run(vars)
         num_in_comm = int(max(args.num_of_clients * args.cfraction, 1))
@@ -94,6 +96,7 @@ if __name__=='__main__':
             global_vars = []
             for var in sum_vars:
                 global_vars.append(var / num_in_comm)
+            global_energy += global_energy_rate + random.uniform(0, global_energy_rate/2)
 
             if i % args.val_freq == 0:
                 for variable, value in zip(vars, global_vars):
@@ -101,6 +104,7 @@ if __name__=='__main__':
                 test_data = myClients.test_data
                 test_label = myClients.test_label
                 print(sess.run(accuracy, feed_dict={inputsx: test_data, inputsy: test_label}))
+                print('Energy consumed:', global_energy + myClients.energy)
 
             if i % args.save_freq == 0:
                 checkpoint_name = os.path.join(args.save_path, '{}_comm'.format(args.modelname) +
