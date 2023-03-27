@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 from dataSets import DataSet
 import cv2
-
+import random
 
 class user(object):
     def __init__(self, localData, localLabel, isToPreprocess):
@@ -77,6 +77,8 @@ class clients(object):
         self.inputsy = inputsy
         self.IID = is_IID
         self.clientsSet = {}
+        self.energy = 0.0
+        self.energy_rate = 10
 
         self.dataset_balance_allocation()
 
@@ -111,5 +113,6 @@ class clients(object):
             for j in range(self.clientsSet[client].dataset_size // self.B):
                 train_data, train_label = self.clientsSet[client].next_batch(self.B)
                 self.session.run(self.train, feed_dict={self.inputsx: train_data, self.inputsy: train_label})
+        self.energy += self.energy_rate + random.uniform(0, self.energy_rate/2)
 
         return self.session.run(tf.trainable_variables())

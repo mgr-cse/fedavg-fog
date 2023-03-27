@@ -23,7 +23,7 @@ parser.add_argument('-sf', '--save_freq', type=int, default=20, help='global mod
 parser.add_argument('-ncomm', '--num_comm', type=int, default=101, help='number of communications')
 parser.add_argument('-sp', '--save_path', type=str, default='./checkpoints', help='the saving path of checkpoints')
 parser.add_argument('-iid', '--IID', type=int, default=0, help='the way to allocate data to clients')
-parser.add_argument('-ns', '--num_servers', type=int, default=5, help='Number of servers')
+parser.add_argument('-ns', '--num_servers', type=int, default=3, help='Number of servers')
 
 
 def test_mkdir(path):
@@ -74,6 +74,8 @@ if __name__=='__main__':
             self.num = num_servers
             self.serverSet = {}
             self.serverVars = {}
+            self.energy = 0.0
+            self.energy_rate = 2.0
             
             # create mapping of clients to server in serverSet
             client_index = 0
@@ -102,10 +104,10 @@ if __name__=='__main__':
         myServers = servers(num_of_servers, myClients)
         
         agg_global_vars = sess.run(tf.trainable_variables())
-        for i in range(args.num_comm):
-            print("communicate round {}".format(i))
+        for i in tqdm(range(args.num_comm)):
+            #print("communicate round {}".format(i))
             for j in range(myServers.num):
-                print(f'server{j} running:')
+                #print(f'server{j} running:')
                 
                 # select random clients
                 client_keys = myServers.serverSet[f'server{j}']
@@ -119,7 +121,7 @@ if __name__=='__main__':
                     global_vars = sess.run(tf.trainable_variables())
                 
                 # train clients
-                for client in tqdm(clients_in_comm):
+                for client in clients_in_comm:
                     local_vars = myClients.ClientUpdate(client, global_vars)
                     if sum_vars is None:
                         sum_vars = local_vars
@@ -132,6 +134,7 @@ if __name__=='__main__':
                 for var in sum_vars:
                     global_vars.append(var / num_in_comm)
                 myServers.serverVars[f'server{j}'] = global_vars
+                myServers.energy += myServers.energy_rate + random.uniform(0, myServers.energy_rate)
 
                 # print server specific validation data
                 if i % args.save_freq == 0:
