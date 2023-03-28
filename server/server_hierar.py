@@ -9,6 +9,7 @@ from Models import Models
 from clients import clients, user
 from copy import deepcopy
 import random
+import json
 
 import requests
 
@@ -53,17 +54,11 @@ def send_to_client(client, global_vars):
         return global_vars
 
 def get_client_data():
-    res = requests.post('http://127.0.0.1:4000/get_client_data', json={})
-    try:
-        response = res.json()
-        client_data = response['data']
-        client_label = response['label']
-    except:
-        print('Invalid response:', res.text)
-    
-    client_data = np.array(client_data)
-    client_label = np.array(client_label)
-    return (client_data, client_label)
+    with open('temp/client_data.json', 'r') as infile:
+        data = json.load(infile)
+        client_data = data['data']
+        client_test = data['test']
+        return (client_data, client_test)
 
 if __name__=='__main__':
     args = parser.parse_args()
