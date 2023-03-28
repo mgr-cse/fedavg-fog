@@ -41,3 +41,8 @@ which means there are 100 clients,  we randomly select 10 in each communicating 
 ```bash
 conda create -n FedAvg-gpu python=3.7.6 tensorflow-gpu=1.13.1
 ```
+
+### Client flask server
+
+Flask application `server/clients.py` launches clients on different machine
+`server/server.py` communicates with flask application and sents and gets data from the client flask app
