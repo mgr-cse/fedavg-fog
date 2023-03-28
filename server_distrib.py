@@ -14,7 +14,7 @@ parser.add_argument('-g', '--gpu', type=str, default='0,1,2,3,4,5,6,7', help='gp
 parser.add_argument('-nc', '--num_of_clients', type=int, default=200, help='numer of the clients')
 parser.add_argument('-cf', '--cfraction', type=float, default=0.3, help='C fraction, 0 means 1 client, 1 means total clients')
 parser.add_argument('-E', '--epoch', type=int, default=5, help='local train epoch')
-parser.add_argument('-B', '--batchsize', type=int, default=10, help='local train batch size')
+parser.add_argument('-B', '--batchsize', type=int, default=200, help='local train batch size')
 parser.add_argument('-mn', '--modelname', type=str, default='mnist_2nn', help='the model to train')
 parser.add_argument('-lr', "--learning_rate", type=float, default=0.01, help="learning rate, \
                     use value from origin paper as default")
@@ -103,10 +103,10 @@ if __name__=='__main__':
         myServers = servers(num_of_servers, myClients)
         
         agg_global_vars = sess.run(tf.trainable_variables())
-        for i in range(args.num_comm):
+        for i in tqdm(range(args.num_comm)):
             print("communicate round {}".format(i))
             for j in range(myServers.num):
-                print(f'server{j} running:')
+                #print(f'server{j} running:')
                 
                 # select random clients
                 client_keys = myServers.serverSet[f'server{j}']
@@ -120,7 +120,7 @@ if __name__=='__main__':
                     global_vars = sess.run(tf.trainable_variables())
                 
                 # train clients
-                for client in tqdm(clients_in_comm):
+                for client in clients_in_comm:
                     local_vars = myClients.ClientUpdate(client, global_vars)
                     if sum_vars is None:
                         sum_vars = local_vars
