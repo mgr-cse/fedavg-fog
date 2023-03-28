@@ -1,4 +1,6 @@
 import os
+import sys
+sys.path.append(os.getcwd())
 import argparse
 import numpy as np
 import tensorflow as tf
@@ -30,6 +32,37 @@ def test_mkdir(path):
     if not os.path.isdir(path):
         os.mkdir(path)
 
+# ---------------------------------------- communication --------------------------------------------- #
+def send_to_client(client, global_vars):
+    global_serial = []
+    for g in global_vars:
+        global_serial.append(g.tolist())
+    
+    res = requests.post('http://127.0.0.1:4000/local_vars', json={"client_id":client, "global_vars": global_serial})    
+    try:
+        response = res.json()
+        local_vars = response['local_vars']
+        local_ndarray = []
+        for l in local_vars:
+            local_ndarray.append(np.array(l))
+        local_vars = local_ndarray
+        return local_vars
+    except:
+        print('Invalid response:', res.text)
+        return global_vars
+
+def get_client_data():
+    res = requests.post('http://127.0.0.1:4000/get_client_data', json={})
+    try:
+        response = res.json()
+        client_data = response['data']
+        client_label = response['label']
+    except:
+        print('Invalid response:', res.text)
+    
+    client_data = np.array(client_data)
+    client_label = np.array(client_label)
+    return (client_data, client_label)
 
 if __name__=='__main__':
     args = parser.parse_args()
@@ -75,6 +108,9 @@ if __name__=='__main__':
 
         #myClients = clients(args.num_of_clients, datasetname,
         #                    args.batchsize, args.epoch, sess, train, inputsx, inputsy, is_IID=args.IID)
+        # get data from clients
+        client_data, client_label = get_client_data()
+
         global_energy = 0.0
         global_energy_rate = 1000.0
         vars = tf.trainable_variables()
@@ -89,20 +125,7 @@ if __name__=='__main__':
             sum_vars = None
             for client in clients_in_comm:
                 #local_vars = myClients.ClientUpdate(client, global_vars)
-                global_serial = []
-                for g in global_vars:
-                    global_serial.append(g.tolist())
-                res = requests.post('http://127.0.0.1:4000/local_vars', json={"client_id":client, "global_vars": global_serial})
-                if res.ok:
-                    try:
-                        response = res.json()
-                        local_vars = response['local_vars']
-                        local_ndarray = []
-                        for l in local_vars:
-                            local_ndarray.append(np.array(l))
-                        local_vars = local_ndarray
-                    except:
-                        print('Invalid response:', res.text)
+                local_vars = send_to_client(client, global_vars)
                 if sum_vars is None:
                     sum_vars = local_vars
                 else:
@@ -114,15 +137,15 @@ if __name__=='__main__':
                 global_vars.append(var / num_in_comm)
             global_energy += global_energy_rate + random.uniform(0, global_energy_rate/2)
 
-            '''
+            
             if i % args.val_freq == 0:
                 for variable, value in zip(vars, global_vars):
                     variable.load(value, sess)
-                test_data = myClients.test_data
-                test_label = myClients.test_label
+                test_data = client_data
+                test_label = client_label
                 print(sess.run(accuracy, feed_dict={inputsx: test_data, inputsy: test_label}))
-                print('Energy consumed:', global_energy + myClients.energy)
-
+                #print('Energy consumed:', global_energy + myClients.energy)
+            '''
             if i % args.save_freq == 0:
                 checkpoint_name = os.path.join(args.save_path, '{}_comm'.format(args.modelname) +
                                                'IID{}_communication{}'.format(args.IID, i+1)+ '.ckpt')

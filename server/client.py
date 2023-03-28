@@ -8,6 +8,8 @@ import numpy as np
 # queue data structures
 
 import os
+import sys
+sys.path.append(os.getcwd())
 import argparse
 #import numpy as np
 import tensorflow as tf
@@ -39,28 +41,6 @@ def test_mkdir(path):
 
 myClients = None
 
-# queue for each topic
-class TopicQueue:
-    def __init__(self, topic_name):
-        # each topic queue has its own lock to ensure broker ordering
-        self.lock = Lock()
-        self.messages = []
-        self.topic_name = topic_name
-
-# stores producer information
-class Producers:
-    def __init__(self):
-        self.count = 0       # count for assigning producer_id
-        self.lock = Lock()   # lock for getting producer_id
-        self.topics = dict() # stores topic: producer_id
-
-class Consumers:
-    def __init__(self):
-        self.count = 0          # count for assigning consumer_id
-        self.lock = Lock()      # lock for getting consumer_id
-        self.topics = dict()    # stores topic: consumer_id
-        self.offsets = dict()   # stores message offset for each consumer_id
-
 app = Flask(__name__)
 
 # debugging functions
@@ -77,7 +57,7 @@ def return_message(status:str, message=None):
 # functions for handelling each endpoint
 
 @app.route('/local_vars', methods=['POST'])
-def topic_register_request():
+def update_local_vars():
     print_thread_id()
     content_type = request.headers.get('Content-Type')
     if content_type != 'application/json':
@@ -91,7 +71,6 @@ def topic_register_request():
         return return_message('failure', 'Error While Parsing json')
     
     global myClients
-    sess.run(tf.initialize_all_variables())
     global_ndarray = []
     for g in global_vars:
         global_ndarray.append(np.array(g))
@@ -103,8 +82,22 @@ def topic_register_request():
     return {
         "local_vars": local_list
     }
-    
     return return_message('error while getting TF lock')
+
+
+@app.route('/get_client_data', methods=['POST'])
+def get_client_dataq():
+    print_thread_id()
+    content_type = request.headers.get('Content-Type')
+    if content_type != 'application/json':
+        return return_message('failure', 'Content-Type not supported')
+    
+    
+    global myClients
+    return {
+        "data": myClients.test_data.tolist(),
+        "label": myClients.test_label.tolist()
+    }
 
 
 @app.route('/size',methods=['GET'])
