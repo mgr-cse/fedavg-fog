@@ -13,13 +13,13 @@ parser.add_argument('-g', '--gpu', type=str, default='0,1,2,3,4,5,6,7', help='gp
 parser.add_argument('-nc', '--num_of_clients', type=int, default=100, help='numer of the clients')
 parser.add_argument('-cf', '--cfraction', type=float, default=0.1, help='C fraction, 0 means 1 client, 1 means total clients')
 parser.add_argument('-E', '--epoch', type=int, default=5, help='local train epoch')
-parser.add_argument('-B', '--batchsize', type=int, default=10, help='local train batch size')
+parser.add_argument('-B', '--batchsize', type=int, default=20, help='local train batch size')
 parser.add_argument('-mn', '--modelname', type=str, default='mnist_2nn', help='the model to train')
 parser.add_argument('-lr', "--learning_rate", type=float, default=0.01, help="learning rate, \
                     use value from origin paper as default")
-parser.add_argument('-vf', "--val_freq", type=int, default=5, help="model validation frequency(of communications)")
+parser.add_argument('-vf', "--val_freq", type=int, default=1, help="model validation frequency(of communications)")
 parser.add_argument('-sf', '--save_freq', type=int, default=20, help='global model save frequency(of communication)')
-parser.add_argument('-ncomm', '--num_comm', type=int, default=1000, help='number of communications')
+parser.add_argument('-ncomm', '--num_comm', type=int, default=100, help='number of communications')
 parser.add_argument('-sp', '--save_path', type=str, default='./checkpoints', help='the saving path of checkpoints')
 parser.add_argument('-iid', '--IID', type=int, default=0, help='the way to allocate data to clients')
 
@@ -78,14 +78,14 @@ if __name__=='__main__':
         vars = tf.trainable_variables()
         global_vars = sess.run(vars)
         num_in_comm = int(max(args.num_of_clients * args.cfraction, 1))
-        for i in range(args.num_comm):
-            print("communicate round {}".format(i))
+        for i in tqdm(range(args.num_comm)):
+            #print("communicate round {}".format(i))
             order = np.arange(args.num_of_clients)
             np.random.shuffle(order)
             clients_in_comm = ['client{}'.format(i) for i in order[0:num_in_comm]]
 
             sum_vars = None
-            for client in tqdm(clients_in_comm):
+            for client in clients_in_comm:
                 local_vars = myClients.ClientUpdate(client, global_vars)
                 if sum_vars is None:
                     sum_vars = local_vars

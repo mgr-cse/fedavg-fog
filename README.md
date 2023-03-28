@@ -36,3 +36,8 @@ which means there are 100 clients,  we randomly select 10 in each communicating 
 
 
 [1] Mcmahan H B , Moore E , Ramage D , et al. Communication-Efficient Learning of Deep Networks from Decentralized Data[J]. 2016.
+
+### setup conda environment for GPU
+```bash
+conda create -n FedAvg-gpu python=3.7.6 tensorflow-gpu=1.13.1
+```
