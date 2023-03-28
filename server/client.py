@@ -4,6 +4,7 @@ import threading
 from threading import Lock
 import traceback
 import numpy as np
+import json
 
 # queue data structures
 
@@ -34,7 +35,7 @@ parser.add_argument('-ncomm', '--num_comm', type=int, default=100, help='number 
 parser.add_argument('-sp', '--save_path', type=str, default='./checkpoints', help='the saving path of checkpoints')
 parser.add_argument('-iid', '--IID', type=int, default=0, help='the way to allocate data to clients')
 
-
+temp_path = 'temp'
 def test_mkdir(path):
     if not os.path.isdir(path):
         os.mkdir(path)
@@ -162,6 +163,14 @@ if __name__ == "__main__":
 
         myClients = clients(args.num_of_clients, datasetname,
                             args.batchsize, args.epoch, sess, train, inputsx, inputsy, is_IID=args.IID)
-    
+        
+        test_mkdir('temp')
+        client_data = {
+            "data": myClients.test_data.tolist(),
+            "test": myClients.test_label.tolist()
+        }
+        with open('temp/client_data.json', 'w') as outfile:
+            json.dump(client_data, outfile)
+
 
         app.run(host='0.0.0.0', port=4000, debug=False, threaded=False, processes=1)
