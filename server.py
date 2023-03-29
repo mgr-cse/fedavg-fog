@@ -103,7 +103,9 @@ if __name__=='__main__':
                     variable.load(value, sess)
                 test_data = myClients.test_data
                 test_label = myClients.test_label
-                print(sess.run(accuracy, feed_dict={inputsx: test_data, inputsy: test_label}))
+                acc, cross = sess.run([accuracy, Cross_entropy], feed_dict={inputsx: test_data, inputsy: test_label})
+                print('communication round:', i)
+                print('Accuracy:', acc, 'Loss:', cross)
                 print('Energy consumed:', global_energy + myClients.energy)
 
             if i % args.save_freq == 0:
