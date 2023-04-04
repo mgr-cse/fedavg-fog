@@ -15,11 +15,24 @@ class user(object):
         self.dataset_size = localData.shape[0]
         self._index_in_train_epoch = 0
         self.parameters = {}
+        
+        # resources
+        self.mod_place = 'client'
+        self.mod_cost = 0
+        self.avail_cpu = 1.0
+        self.avail_ram = 500.0
+        self.max_ram = 500.0
 
         self.train_dataset = self.dataset
         self.train_label = self.label
         if self.isToPreprocess == 1:
             self.preprocess()
+        
+    def mod_place_func(self):
+        if self.avail_cpu < 0.5 or self.avail_ram < 250.0:
+            self.mod_place = 'server'
+        else:
+            self.mod_place = 'client'
 
 
     def next_batch(self, batchsize):
@@ -59,6 +72,15 @@ class user(object):
 
         self.train_dataset = new_images
 
+    def updatemod(self):
+        prev_mod = self.mod_place
+        # update resources
+        self.avail_cpu = random.uniform(0, 1.0)
+        self.avail_ram = random.uniform(0, self.max_ram)
+        self.mod_place_func()
+        if prev_mod != self.mod_place:
+            self.mod_cost += 1
+
 
 
 class clients(object):
@@ -77,8 +99,16 @@ class clients(object):
         self.inputsy = inputsy
         self.IID = is_IID
         self.clientsSet = {}
+        
+        # for energy
         self.energy = 0.0
         self.energy_rate = 10
+
+        # for latency
+        self.client_thresh = 10
+        self.base_lat = 2
+        self.lat_factor = 10
+        self.noise_fact = 0.1
 
         self.dataset_balance_allocation()
 
@@ -116,3 +146,22 @@ class clients(object):
         self.energy += self.energy_rate + random.uniform(0, self.energy_rate/2)
 
         return self.session.run(tf.trainable_variables())
+    
+    def getlat(self, client, tot_client, mig_enable):
+        # check mod place
+        if mig_enable:
+            self.clientsSet[client].updatemod()
+        
+        if self.clientsSet[client].mod_place == 'server':
+            return 0.0
+        
+        # request lat
+        lam = self.base_lat + tot_client * (self.lat_factor if tot_client > self.client_thresh else 0)
+        lam += random.uniform(0, self.noise_fact)*lam
+        return lam
+
+    def getmodcost(self):
+        total_cost = 0
+        for c in self.clientsSet.values():
+            total_cost += c.mod_cost
+        return total_cost
