@@ -100,7 +100,7 @@ if __name__=='__main__':
             max_lat = 0
             for client in clients_in_comm:
                 # add latency call
-                curr_lat = myClients.getlat(client, myClients.num_of_clients, True)
+                curr_lat = myClients.getlat(client, len(clients_in_comm), True)
                 max_lat = max([curr_lat, max_lat])
                 
                 local_vars = myClients.ClientUpdate(client, global_vars)

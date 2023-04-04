@@ -7,6 +7,8 @@ from Models import Models
 from clients import clients, user
 from copy import deepcopy
 import random
+from sklearn.metrics import f1_score, precision_score, recall_score
+import json
 
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter, description="FedAvg")
@@ -24,7 +26,7 @@ parser.add_argument('-ncomm', '--num_comm', type=int, default=101, help='number 
 parser.add_argument('-sp', '--save_path', type=str, default='./checkpoints', help='the saving path of checkpoints')
 parser.add_argument('-iid', '--IID', type=int, default=0, help='the way to allocate data to clients')
 parser.add_argument('-ns', '--num_servers', type=int, default=3, help='Number of servers')
-
+parser.add_argument('-of', '--obeserve_file', type=str, default='test_run_hierar', help='file for obeservations')
 
 def test_mkdir(path):
     if not os.path.isdir(path):
@@ -38,6 +40,8 @@ if __name__=='__main__':
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
     test_mkdir(args.save_path)
+    test_mkdir('obeserve/')
+    data_to_save = []
 
     if args.modelname == 'mnist_2nn' or args.modelname == 'mnist_cnn':
         datasetname = 'mnist'
@@ -61,7 +65,9 @@ if __name__=='__main__':
         train = optimizer.minimize(Cross_entropy)
 
     with tf.variable_scope('validation') as scope:
-        correct_prediction = tf.equal(tf.argmax(predict_label, axis=1), tf.argmax(inputsy, axis=1))
+        y_pred = tf.argmax(predict_label, axis=1)
+        y_true = tf.argmax(inputsy, axis=1)
+        correct_prediction = tf.equal(y_pred, y_true)
         accuracy = tf.reduce_mean(tf.cast(correct_prediction, 'float'))
 
     saver = tf.train.Saver(max_to_keep=3)
@@ -74,8 +80,16 @@ if __name__=='__main__':
             self.num = num_servers
             self.serverSet = {}
             self.serverVars = {}
+            
             self.energy = 0.0
             self.energy_rate = 2.0
+
+            # for latency to global aggregation
+            self.client_thresh = 10
+            self.base_lat = 100
+            self.lat_factor = 10
+            self.noise_fact = 0.1
+            
             
             # create mapping of clients to server in serverSet
             client_index = 0
@@ -90,6 +104,11 @@ if __name__=='__main__':
 
             for k in self.serverSet:
                 self.serverVars[k] = None
+        
+        def getlat(self, tot_client):
+            lam = self.base_lat + tot_client * (self.lat_factor if tot_client > self.client_thresh else 0)
+            lam += random.uniform(0, self.noise_fact)*lam
+            return lam
 
 
     # ---------------------------------------- train --------------------------------------------- #
@@ -102,10 +121,15 @@ if __name__=='__main__':
         myClients = clients(args.num_of_clients, datasetname,
                             args.batchsize, args.epoch, sess, train, inputsx, inputsy, is_IID=args.IID)
         myServers = servers(num_of_servers, myClients)
+
+        # for global aggregation
+        global_energy = 0.0
+        global_energy_rate = 1000.0
         
         agg_global_vars = sess.run(tf.trainable_variables())
         for i in tqdm(range(args.num_comm)):
             #print("communicate round {}".format(i))
+            max_all_client_groups_lat = 0
             for j in range(myServers.num):
                 #print(f'server{j} running:')
                 
@@ -115,25 +139,36 @@ if __name__=='__main__':
                 clients_in_comm = random.sample(client_keys, num_in_comm)
                 
                 sum_vars = None
+                max_lat_client = 0
                 global_vars = myServers.serverVars[f'server{j}']
+                
                 # init global vars for server
                 if global_vars is None:
                     global_vars = sess.run(tf.trainable_variables())
                 
                 # train clients
                 for client in clients_in_comm:
+                    # add latency call for clients
+                    curr_lat_client = myClients.getlat(client, len(clients_in_comm), True)
+                    max_lat_client = max([curr_lat_client, max_lat_client])
                     local_vars = myClients.ClientUpdate(client, global_vars)
+                    
                     if sum_vars is None:
                         sum_vars = local_vars
                     else:
                         for sum_var, local_var in zip(sum_vars, local_vars):
                             sum_var += local_var
                 
-                # aggregate results
+                # max latency for global aggregation
+                max_all_client_groups_lat = max([max_all_client_groups_lat, max_lat_client])
+                
+                # aggregate results (local)
                 global_vars = []
                 for var in sum_vars:
                     global_vars.append(var / num_in_comm)
                 myServers.serverVars[f'server{j}'] = global_vars
+                
+                # update local energy
                 myServers.energy += myServers.energy_rate + random.uniform(0, myServers.energy_rate)
 
                 # print server specific validation data
@@ -145,8 +180,15 @@ if __name__=='__main__':
             # global aggregation
             if i % args.val_freq == 0:
                 print('*** global aggregation ***')
+                max_glob_lat = 0
                 serv_sum_vars = None
+                
+                # global fedavg
                 for serv in myServers.serverSet:
+                    # latency
+                    curr_lat = myServers.getlat(myServers.num)
+                    max_glob_lat = max([curr_lat, max_glob_lat])
+                    
                     local_vars = myServers.serverVars[serv]
                     if serv_sum_vars is None:
                         serv_sum_vars = local_vars
@@ -160,12 +202,57 @@ if __name__=='__main__':
                 for serv in myServers.serverSet:
                     myServers.serverVars[serv] = deepcopy(agg_global_vars)
                 
-
+                # at global aggregation evaluate cloud energy
+                global_energy += global_energy_rate + random.uniform(0, global_energy_rate/2)
                 # eval model
                 for variable, value in zip(tf.trainable_variables(), agg_global_vars):
                     variable.load(value, sess)
                 test_data = myClients.test_data
                 test_label = myClients.test_label
-                acc, cross = sess.run([accuracy, Cross_entropy], feed_dict={inputsx: test_data, inputsy: test_label})
+                acc, cross, y_pred_run, y_true_run = sess.run([accuracy, Cross_entropy, y_pred, y_true], feed_dict={inputsx: test_data, inputsy: test_label})
+                
+                # data to note
                 print('communication round:', i// args.val_freq)
                 print('Accuracy:', acc, 'Loss:', cross)
+                print('Local fog Energy Consumed:', myServers.energy)
+                print('Global agg Energy Consumed:', global_energy)
+                print('client Energy consumed:', myClients.energy)
+                print('Latency (local, client to fog):', max_all_client_groups_lat )
+                print('Latency (fog to cloud):', max_glob_lat)
+                mig_cost = myClients.getmodcost()
+                print('Migration cost:', mig_cost)
+                f1_val = f1_score(y_true_run, y_pred_run, average='macro')
+                prec_val = precision_score(y_true_run, y_pred_run, average='macro')
+                rec_val = recall_score(y_true_run, y_pred_run, average='macro')
+                print(f'f1={f1_val} precision={prec_val} recall={rec_val}')
+
+                # save data in dictionary
+                data_note = {
+                    "round": i,
+                    "accuracy": float(acc),
+                    "loss": [float(l) for l in cross],
+                    "energy_global": global_energy,
+                    "energy_client": myClients.energy,
+                    "energy_fog": myServers.energy,
+                    "latency_local_agg": max_all_client_groups_lat,
+                    "latency_global_agg": max_glob_lat,
+                    "f1": f1_val,
+                    "prec": prec_val,
+                    "rec": rec_val,
+                    "mig_cost": mig_cost
+                }
+                data_to_save.append(data_note)
+
+        # save obeserved_data
+        
+        final_data = {
+            "num_clients": myClients.num_of_clients,
+            "servers": myServers.num,
+            "serv_frac": 1.0,
+            "client_frac": args.cfraction,
+            "data": data_to_save
+        }
+
+        with open(f'./obeserve/{args.obeserve_file}', 'w') as f:
+            json.dump(final_data, f)
+            print('+++ written to file')
