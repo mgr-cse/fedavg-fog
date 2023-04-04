@@ -168,40 +168,35 @@ if __name__=='__main__':
                     save_path = saver.save(sess, checkpoint_name)
             
             
-             # hierarchical
+            
+            # hierarchical
             if i % args.val_freq == 0:
                 print('*** global aggregation ***')
-                # stage 1, add
-                server_updated_vars = {}
-                for j in range(myServers.num):
+                for j in range(3):
                     serv_sum_vars = None
-                    # select all servers for starters
                     for serv in myServers.serverSet:
-                        if serv == f'server{j}':
-                            print(serv)
                         local_vars = myServers.serverVars[serv]
                         if serv_sum_vars is None:
-                            serv_sum_vars = local_vars
+                            serv_sum_vars = deepcopy(local_vars)
                         else:
                            for sum_var, local_var in zip(serv_sum_vars, local_vars):
                                sum_var += local_var
-                    
                     agg_global_vars = []
                     for var in serv_sum_vars:
                         agg_global_vars.append(var / myServers.num)
-                    server_updated_vars[f'server{j}'] = deepcopy(agg_global_vars)
                 
-                # each server updates
+                # give vars back to servers
                 for serv in myServers.serverSet:
-                    myServers.serverVars[serv] = deepcopy(server_updated_vars[serv])
+                    myServers.serverVars[serv] = deepcopy(agg_global_vars)
                 
 
                 # eval model
-                for variable, value in zip(tf.trainable_variables(), server_updated_vars[f'server0']):
+                for variable, value in zip(tf.trainable_variables(), agg_global_vars):
                     variable.load(value, sess)
                 test_data = myClients.test_data
                 test_label = myClients.test_label
                 print(f'global aggregation:' ,sess.run(accuracy, feed_dict={inputsx: test_data, inputsy: test_label}))
+            
             
             
             # distributed, to debug
