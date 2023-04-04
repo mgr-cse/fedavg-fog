@@ -18,13 +18,14 @@ parser.add_argument('-B', '--batchsize', type=int, default=200, help='local trai
 parser.add_argument('-mn', '--modelname', type=str, default='mnist_2nn', help='the model to train')
 parser.add_argument('-lr', "--learning_rate", type=float, default=0.01, help="learning rate, \
                     use value from origin paper as default")
-parser.add_argument('-vf', "--val_freq", type=int, default=1, help="model validation frequency(of communications)")
+parser.add_argument('-vf', "--val_freq", type=int, default=5, help="model validation frequency(of communications)")
 parser.add_argument('-sf', '--save_freq', type=int, default=20, help='global model save frequency(of communication)')
 parser.add_argument('-ncomm', '--num_comm', type=int, default=101, help='number of communications')
 parser.add_argument('-sp', '--save_path', type=str, default='./checkpoints', help='the saving path of checkpoints')
 parser.add_argument('-iid', '--IID', type=int, default=0, help='the way to allocate data to clients')
-parser.add_argument('-ns', '--num_servers', type=int, default=5, help='Number of servers')
+parser.add_argument('-ns', '--num_servers', type=int, default=3, help='Number of servers')
 parser.add_argument('-srf', '--server_fraction', type=float, default=1.0, help='fraction of other servers selected')
+parser.add_argument('-of', '--obeserve_file', type=str, default='test_run_hierar', help='file for obeservations')
 
 
 def test_mkdir(path):
@@ -75,6 +76,15 @@ if __name__=='__main__':
             self.num = num_servers
             self.serverSet = {}
             self.serverVars = {}
+
+            self.energy = 0.0
+            self.energy_rate = 2.0
+
+            # server to server latency params
+            self.client_thresh = 10
+            self.base_lat = 100
+            self.lat_factor = 10
+            self.noise_fact = 0.1
             
             # create mapping of clients to server in serverSet
             client_index = 0
@@ -90,6 +100,12 @@ if __name__=='__main__':
             for k in self.serverSet:
                 self.serverVars[k] = None
 
+        def getlat(self, tot_client):
+            lam = self.base_lat + tot_client * (self.lat_factor if tot_client > self.client_thresh else 0)
+            lam += random.uniform(0, self.noise_fact)*lam
+            return lam
+
+
 
     # ---------------------------------------- train --------------------------------------------- #
     with tf.Session(config=tf.ConfigProto(
@@ -104,7 +120,8 @@ if __name__=='__main__':
         
         agg_global_vars = sess.run(tf.trainable_variables())
         for i in tqdm(range(args.num_comm)):
-            print("communicate round {}".format(i))
+            #print("communicate round {}".format(i))
+            max_all_client_groups_lat = 0
             for j in range(myServers.num):
                 #print(f'server{j} running:')
                 
@@ -114,6 +131,7 @@ if __name__=='__main__':
                 clients_in_comm = random.sample(client_keys, num_in_comm)
                 
                 sum_vars = None
+                max_lat_client = 0
                 global_vars = myServers.serverVars[f'server{j}']
                 # init global vars for server
                 if global_vars is None:
@@ -121,6 +139,9 @@ if __name__=='__main__':
                 
                 # train clients
                 for client in clients_in_comm:
+                    # add latency call for clients
+                    curr_lat_client = myClients.getlat(client, len(clients_in_comm), True)
+                    max_lat_client = max([curr_lat_client, max_lat_client])
                     local_vars = myClients.ClientUpdate(client, global_vars)
                     if sum_vars is None:
                         sum_vars = local_vars
@@ -128,11 +149,17 @@ if __name__=='__main__':
                         for sum_var, local_var in zip(sum_vars, local_vars):
                             sum_var += local_var
                 
+                # max latency for global aggregation
+                max_all_client_groups_lat = max([max_all_client_groups_lat, max_lat_client])
+                
                 # aggregate results
                 global_vars = []
                 for var in sum_vars:
                     global_vars.append(var / num_in_comm)
                 myServers.serverVars[f'server{j}'] = global_vars
+
+                # update local energy
+                myServers.energy += myServers.energy_rate + random.uniform(0, myServers.energy_rate)
                 
                 # save model
                 if i % args.save_freq == 0:
@@ -140,36 +167,45 @@ if __name__=='__main__':
                                                    'IID{}_communication{}'.format(args.IID, i+1)+ f'server{j}'+'.ckpt')
                     save_path = saver.save(sess, checkpoint_name)
             
-            '''
+            
              # hierarchical
             if i % args.val_freq == 0:
                 print('*** global aggregation ***')
-                serv_sum_vars = None
+                # stage 1, add
+                server_updated_vars = {}
+                for j in range(myServers.num):
+                    serv_sum_vars = None
+                    # select all servers for starters
+                    for serv in myServers.serverSet:
+                        if serv == f'server{j}':
+                            print(serv)
+                        local_vars = myServers.serverVars[serv]
+                        if serv_sum_vars is None:
+                            serv_sum_vars = local_vars
+                        else:
+                           for sum_var, local_var in zip(serv_sum_vars, local_vars):
+                               sum_var += local_var
+                    
+                    agg_global_vars = []
+                    for var in serv_sum_vars:
+                        agg_global_vars.append(var / myServers.num)
+                    server_updated_vars[f'server{j}'] = deepcopy(agg_global_vars)
+                
+                # each server updates
                 for serv in myServers.serverSet:
-                    local_vars = myServers.serverVars[serv]
-                    if serv_sum_vars is None:
-                        serv_sum_vars = local_vars
-                    else:
-                       for sum_var, local_var in zip(serv_sum_vars, local_vars):
-                           sum_var += local_var
-                agg_global_vars = []
-                for var in serv_sum_vars:
-                    agg_global_vars.append(var / myServers.num)
-                # give vars back to servers
-                for serv in myServers.serverSet:
-                    myServers.serverVars[serv] = deepcopy(agg_global_vars)
+                    myServers.serverVars[serv] = deepcopy(server_updated_vars[serv])
                 
 
                 # eval model
-                for variable, value in zip(tf.trainable_variables(), agg_global_vars):
+                for variable, value in zip(tf.trainable_variables(), server_updated_vars[f'server0']):
                     variable.load(value, sess)
                 test_data = myClients.test_data
                 test_label = myClients.test_label
                 print(f'global aggregation:' ,sess.run(accuracy, feed_dict={inputsx: test_data, inputsy: test_label}))
-            '''
+            
             
             # distributed, to debug
-            
+            '''
             global_agg_saves = {}
             for j in range(myServers.num):
                 # global aggregation
@@ -201,15 +237,15 @@ if __name__=='__main__':
                     # give vars back to the server
                     global_agg_saves[f'server{j}'] = deepcopy(agg_global_vars)
 
-            
-            for serv in global_agg_saves:
-                #myServers.serverVars[serv] = global_agg_saves[serv]
-                pass
+            if i % args.val_freq == 0:            
+                for serv in global_agg_saves:
+                    myServers.serverVars[serv] = global_agg_saves[serv]
+                    pass
                 # eval model
-            for variable, value in zip(tf.trainable_variables(), myServers.serverVars['server0']):
-                variable.load(value, sess)
-            test_data = myClients.test_data
-            test_label = myClients.test_label
-            print(f'global aggregation:', sess.run([accuracy, Cross_entropy], feed_dict={inputsx: test_data, inputsy: test_label}))
+                for variable, value in zip(tf.trainable_variables(), myServers.serverVars['server0']):
+                    variable.load(value, sess)
+                test_data = myClients.test_data
+                test_label = myClients.test_label
+                print(f'global aggregation:', sess.run([accuracy, Cross_entropy], feed_dict={inputsx: test_data, inputsy: test_label}))
             
-                
+            '''
