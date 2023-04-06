@@ -143,7 +143,9 @@ class clients(object):
             for j in range(self.clientsSet[client].dataset_size // self.B):
                 train_data, train_label = self.clientsSet[client].next_batch(self.B)
                 self.session.run(self.train, feed_dict={self.inputsx: train_data, self.inputsy: train_label})
-        self.energy += self.energy_rate + random.uniform(0, self.energy_rate/2)
+
+        if self.clientsSet[client].mod_place == 'client':
+            self.energy += self.energy_rate + random.uniform(0, self.energy_rate/2)
 
         return self.session.run(tf.trainable_variables())
     

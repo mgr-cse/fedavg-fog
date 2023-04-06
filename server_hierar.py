@@ -27,7 +27,7 @@ parser.add_argument('-sp', '--save_path', type=str, default='./checkpoints', hel
 parser.add_argument('-iid', '--IID', type=int, default=0, help='the way to allocate data to clients')
 parser.add_argument('-ns', '--num_servers', type=int, default=3, help='Number of servers')
 parser.add_argument('-of', '--obeserve_file', type=str, default='test_run_hierar', help='file for obeservations')
-
+parser.add_argument('-mig', '--migration', type=int, default=1, help='enable migration')
 def test_mkdir(path):
     if not os.path.isdir(path):
         os.mkdir(path)
@@ -149,8 +149,8 @@ if __name__=='__main__':
                 # train clients
                 for client in clients_in_comm:
                     # add latency call for clients
-                    curr_lat_client = myClients.getlat(client, len(clients_in_comm), True)
-                    max_lat_client = max([curr_lat_client, max_lat_client])
+                    curr_lat_client = myClients.getlat(client, len(clients_in_comm), args.migration)
+                    max_lat_client += curr_lat_client
                     local_vars = myClients.ClientUpdate(client, global_vars)
                     
                     if sum_vars is None:
@@ -159,6 +159,7 @@ if __name__=='__main__':
                         for sum_var, local_var in zip(sum_vars, local_vars):
                             sum_var += local_var
                 
+                max_lat_client = max_lat_client / len(clients_in_comm)
                 # max latency for global aggregation
                 max_all_client_groups_lat = max([max_all_client_groups_lat, max_lat_client])
                 
@@ -246,6 +247,9 @@ if __name__=='__main__':
         # save obeserved_data
         
         final_data = {
+            "model": "fogfl",
+            "val_freq": args.val_freq,
+            "migration": args.migration,
             "num_clients": myClients.num_of_clients,
             "servers": myServers.num,
             "serv_frac": 1.0,

@@ -28,7 +28,7 @@ parser.add_argument('-iid', '--IID', type=int, default=0, help='the way to alloc
 parser.add_argument('-ns', '--num_servers', type=int, default=5, help='Number of servers')
 parser.add_argument('-srf', '--server_fraction', type=float, default=0.5, help='fraction of other servers selected')
 parser.add_argument('-of', '--obeserve_file', type=str, default='test_run_distrib', help='file for obeservations')
-
+parser.add_argument('-mig', '--migration', type=int, default=1, help='enable migration')
 
 def test_mkdir(path):
     if not os.path.isdir(path):
@@ -89,8 +89,8 @@ if __name__=='__main__':
 
             # server to server latency params
             self.client_thresh = 10
-            self.base_lat = 10
-            self.lat_factor = 1
+            self.base_lat = 60
+            self.lat_factor = 10
             self.noise_fact = 0.1
             
             # create mapping of clients to server in serverSet
@@ -147,8 +147,8 @@ if __name__=='__main__':
                 # train clients
                 for client in clients_in_comm:
                     # add latency call for clients
-                    curr_lat_client = myClients.getlat(client, len(clients_in_comm), True)
-                    max_lat_client = max([curr_lat_client, max_lat_client])
+                    curr_lat_client = myClients.getlat(client, len(clients_in_comm), args.migration)
+                    max_lat_client += curr_lat_client
                     local_vars = myClients.ClientUpdate(client, global_vars)
                     if sum_vars is None:
                         sum_vars = local_vars
@@ -156,6 +156,7 @@ if __name__=='__main__':
                         for sum_var, local_var in zip(sum_vars, local_vars):
                             sum_var += local_var
                 
+                max_lat_client = max_lat_client / len(clients_in_comm)
                 # max latency for global aggregation
                 max_all_client_groups_lat = max([max_all_client_groups_lat, max_lat_client])
                 
@@ -254,6 +255,9 @@ if __name__=='__main__':
         
         # save obeserved_data
         final_data = {
+            "model": "fogfl-ng",
+            "val_freq": args.val_freq,
+            "migration": args.migration,
             "num_clients": myClients.num_of_clients,
             "servers": myServers.num,
             "serv_frac": args.server_fraction,

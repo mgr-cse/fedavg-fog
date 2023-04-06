@@ -24,7 +24,7 @@ parser.add_argument('-ncomm', '--num_comm', type=int, default=200, help='number 
 parser.add_argument('-sp', '--save_path', type=str, default='./checkpoints', help='the saving path of checkpoints')
 parser.add_argument('-iid', '--IID', type=int, default=0, help='the way to allocate data to clients')
 parser.add_argument('-of', '--obeserve_file', type=str, default='test_run', help='file for obeservations')
-
+parser.add_argument('-mig', '--migration', type=int, default=1, help='enable migration')
 
 def test_mkdir(path):
     if not os.path.isdir(path):
@@ -85,7 +85,7 @@ if __name__=='__main__':
         global_energy = 0.0
         global_energy_rate = 1000.0
         myClients.base_lat = 500
-        myClients.lat_factor = 100
+        myClients.lat_factor = 10
         
         vars = tf.trainable_variables()
         global_vars = sess.run(vars)
@@ -100,8 +100,8 @@ if __name__=='__main__':
             max_lat = 0
             for client in clients_in_comm:
                 # add latency call
-                curr_lat = myClients.getlat(client, len(clients_in_comm), True)
-                max_lat = max([curr_lat, max_lat])
+                curr_lat = myClients.getlat(client, len(clients_in_comm), args.migration)
+                max_lat += curr_lat
                 
                 local_vars = myClients.ClientUpdate(client, global_vars)
                 if sum_vars is None:
@@ -109,6 +109,7 @@ if __name__=='__main__':
                 else:
                     for sum_var, local_var in zip(sum_vars, local_vars):
                         sum_var += local_var
+            max_lat = max_lat / len(clients_in_comm)
 
             global_vars = []
             for var in sum_vars:
@@ -156,6 +157,9 @@ if __name__=='__main__':
 
         # save obeserved_data
         final_data = {
+            "model": "fedavg",
+            "val_freq": args.val_freq,
+            "migration": args.migration,
             "num_clients": myClients.num_of_clients,
             "servers": 1,
             "serv_frac": 1.0,
