@@ -13,7 +13,7 @@ import json
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter, description="FedAvg")
 parser.add_argument('-g', '--gpu', type=str, default='0,1,2,3,4,5,6,7', help='gpu id to use(e.g. 0,1,2,3)')
-parser.add_argument('-nc', '--num_of_clients', type=int, default=100, help='numer of the clients')
+parser.add_argument('-nc', '--num_of_clients', type=int, default=200, help='numer of the clients')
 parser.add_argument('-cf', '--cfraction', type=float, default=0.3, help='C fraction, 0 means 1 client, 1 means total clients')
 parser.add_argument('-E', '--epoch', type=int, default=5, help='local train epoch')
 parser.add_argument('-B', '--batchsize', type=int, default=200, help='local train batch size')
@@ -22,7 +22,7 @@ parser.add_argument('-lr', "--learning_rate", type=float, default=0.01, help="le
                     use value from origin paper as default")
 parser.add_argument('-vf', "--val_freq", type=int, default=5, help="model validation frequency(of communications)")
 parser.add_argument('-sf', '--save_freq', type=int, default=20, help='global model save frequency(of communication)')
-parser.add_argument('-ncomm', '--num_comm', type=int, default=101, help='number of communications')
+parser.add_argument('-ncomm', '--num_comm', type=int, default=201, help='number of communications')
 parser.add_argument('-sp', '--save_path', type=str, default='./checkpoints', help='the saving path of checkpoints')
 parser.add_argument('-iid', '--IID', type=int, default=0, help='the way to allocate data to clients')
 parser.add_argument('-ns', '--num_servers', type=int, default=3, help='Number of servers')
