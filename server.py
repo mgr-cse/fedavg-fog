@@ -8,6 +8,10 @@ from clients import clients, user
 import random
 from sklearn.metrics import f1_score, precision_score, recall_score
 import json
+from pyJoules.energy_meter import measure_energy
+from pyJoules.energy_meter import EnergyContext
+from pyJoules.device.rapl_device import RaplCoreDomain
+from pyJoules.handler.csv_handler import CSVHandler
 
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter, description="FedAvg")
 parser.add_argument('-g', '--gpu', type=str, default='0,1,2,3,4,5,6,7', help='gpu id to use(e.g. 0,1,2,3)')
@@ -71,6 +75,9 @@ if __name__=='__main__':
 
     saver = tf.train.Saver(max_to_keep=3)
 
+    # ---------------------------------------- energy --------------------------------------------- #
+    energy_csv = CSVHandler(f'obeserve/{args.obeserve_file}-energy.csv')
+
     # ---------------------------------------- train --------------------------------------------- #
     with tf.Session(config=tf.ConfigProto(
             log_device_placement=False, \
@@ -80,6 +87,11 @@ if __name__=='__main__':
 
         myClients = clients(args.num_of_clients, datasetname,
                             args.batchsize, args.epoch, sess, train, inputsx, inputsy, is_IID=args.IID)
+        
+        @measure_energy(domains=[RaplCoreDomain(0)], handler=energy_csv)
+        def client_local_update(*args):
+            return myClients.ClientUpdate(*args)
+        
         
         # params for cloud only topology
         global_energy = 0.0
@@ -102,13 +114,13 @@ if __name__=='__main__':
                 # add latency call
                 curr_lat = myClients.getlat(client, len(clients_in_comm), args.migration)
                 max_lat += curr_lat
-                
-                local_vars = myClients.ClientUpdate(client, global_vars)
-                if sum_vars is None:
-                    sum_vars = local_vars
-                else:
-                    for sum_var, local_var in zip(sum_vars, local_vars):
-                        sum_var += local_var
+                local_vars = client_local_update(client, global_vars)
+                with EnergyContext(handler=energy_csv, domains=[RaplCoreDomain(0)]) as ctx:    
+                    if sum_vars is None:
+                        sum_vars = local_vars
+                    else:
+                        for sum_var, local_var in zip(sum_vars, local_vars):
+                           sum_var += local_var
             max_lat = max_lat / len(clients_in_comm)
 
             global_vars = []
@@ -170,3 +182,4 @@ if __name__=='__main__':
         with open(f'./obeserve/{args.obeserve_file}', 'w') as f:
             json.dump(final_data, f)
             print('+++ written to file')
+        energy_csv.save_data()
