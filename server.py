@@ -18,7 +18,7 @@ parser.add_argument('-g', '--gpu', type=str, default='0,1,2,3,4,5,6,7', help='gp
 parser.add_argument('-nc', '--num_of_clients', type=int, default=200, help='numer of the clients')
 parser.add_argument('-cf', '--cfraction', type=float, default=0.1, help='C fraction, 0 means 1 client, 1 means total clients')
 parser.add_argument('-E', '--epoch', type=int, default=5, help='local train epoch')
-parser.add_argument('-B', '--batchsize', type=int, default=200, help='local train batch size')
+parser.add_argument('-B', '--batchsize', type=int, default=10, help='local train batch size')
 parser.add_argument('-mn', '--modelname', type=str, default='mnist_2nn', help='the model to train')
 parser.add_argument('-lr', "--learning_rate", type=float, default=0.01, help="learning rate, \
                     use value from origin paper as default")
@@ -76,7 +76,7 @@ if __name__=='__main__':
     saver = tf.train.Saver(max_to_keep=3)
 
     # ---------------------------------------- energy --------------------------------------------- #
-    energy_csv = CSVHandler(f'obeserve/{args.obeserve_file}-energy.csv')
+    #energy_csv = CSVHandler(f'obeserve/{args.obeserve_file}-energy.csv')
 
     # ---------------------------------------- train --------------------------------------------- #
     with tf.Session(config=tf.ConfigProto(
@@ -88,7 +88,7 @@ if __name__=='__main__':
         myClients = clients(args.num_of_clients, datasetname,
                             args.batchsize, args.epoch, sess, train, inputsx, inputsy, is_IID=args.IID)
         
-        @measure_energy(domains=[RaplCoreDomain(0)], handler=energy_csv)
+        #@measure_energy(domains=[RaplCoreDomain(0)], handler=energy_csv)
         def client_local_update(*args):
             return myClients.ClientUpdate(*args)
         
@@ -102,6 +102,7 @@ if __name__=='__main__':
         vars = tf.trainable_variables()
         global_vars = sess.run(vars)
         num_in_comm = int(max(args.num_of_clients * args.cfraction, 1))
+        max_comm_lat = 0.0
         for i in tqdm(range(args.num_comm)):
             #print("communicate round {}".format(i))
             order = np.arange(args.num_of_clients)
@@ -109,19 +110,20 @@ if __name__=='__main__':
             clients_in_comm = ['client{}'.format(i) for i in order[0:num_in_comm]]
 
             sum_vars = None
-            max_lat = 0
+            max_lat = 0.0
             for client in clients_in_comm:
                 # add latency call
                 curr_lat = myClients.getlat(client, len(clients_in_comm), args.migration)
                 max_lat += curr_lat
                 local_vars = client_local_update(client, global_vars)
-                with EnergyContext(handler=energy_csv, domains=[RaplCoreDomain(0)]) as ctx:    
-                    if sum_vars is None:
-                        sum_vars = local_vars
-                    else:
-                        for sum_var, local_var in zip(sum_vars, local_vars):
-                           sum_var += local_var
+                #with EnergyContext(handler=energy_csv, domains=[RaplCoreDomain(0)]) as ctx:    
+                if sum_vars is None:
+                    sum_vars = local_vars
+                else:
+                    for sum_var, local_var in zip(sum_vars, local_vars):
+                       sum_var += local_var
             max_lat = max_lat / len(clients_in_comm)
+            max_comm_lat = max([max_comm_lat, max_lat])
 
             global_vars = []
             for var in sum_vars:
@@ -138,10 +140,10 @@ if __name__=='__main__':
                 # data to note
                 print('communication round:', i)
                 print('Accuracy:', acc, 'Loss:', cross)
-                print('Energy consumed:', global_energy + myClients.energy)
-                print('Latency:', max_lat)
+                #print('Energy consumed:', global_energy + myClients.energy)
+                #print('Latency:', max_lat)
                 mig_cost = myClients.getmodcost()
-                print('Migration cost:', mig_cost)
+                #print('Migration cost:', mig_cost)
                 f1_val = f1_score(y_true_run, y_pred_run, average='macro')
                 prec_val = precision_score(y_true_run, y_pred_run, average='macro')
                 rec_val = recall_score(y_true_run, y_pred_run, average='macro')
@@ -182,4 +184,4 @@ if __name__=='__main__':
         with open(f'./obeserve/{args.obeserve_file}', 'w') as f:
             json.dump(final_data, f)
             print('+++ written to file')
-        energy_csv.save_data()
+        #energy_csv.save_data()
